@@ -1,5 +1,4 @@
 mod lexer;
-pub mod parser;
 use anyhow::{bail, Error, Result};
 
 use lexer::{Token, TokenType};

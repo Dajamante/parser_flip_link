@@ -4,6 +4,7 @@ use lexer::{Token, TokenType};
 #[derive(Clone, Debug, PartialEq)]
 struct Node<'a> {
     token: Token<'a>,
+    parent: Option<Box<Node<'a>>>,
     children: Box<Vec<Node<'a>>>,
 }
 
@@ -11,12 +12,14 @@ impl<'a> Node<'a> {
     fn new_leaf(token: Token<'a>) -> Self {
         Node {
             token,
+            parent: None,
             children: Box::new(Vec::new()),
         }
     }
     fn new_tree(token: Token<'a>, childs: Vec<Node<'a>>) -> Self {
         Node {
             token,
+            parent: None,
             children: Box::new(childs),
         }
     }
@@ -37,7 +40,10 @@ fn parse_unit(mut it: TokenIt) -> Option<Node> {
 }
 fn parse_number(mut it: TokenIt) -> Node {
     let token = *it.next().unwrap();
-    if let Some(unit) = parse_unit(it) {
+    if let Some(mut unit) = parse_unit(it) {
+        let mut temp = Node::new_tree(token, vec![unit]);
+        unit.parent = Some(Box::new(temp));
+        temp.children.push(unit);
         return Node::new_tree(token, vec![unit]);
     }
 
@@ -53,6 +59,8 @@ fn parse(tokens: Vec<Token>) {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
+
     use crate::lexer::lexer;
 
     use super::*;
@@ -65,6 +73,7 @@ mod tests {
             node,
             Node {
                 token: vec_num[0],
+                parent: None,
                 children: Box::new(Vec::new()),
             }
         );
@@ -74,6 +83,9 @@ mod tests {
         let vec_num = lexer("42K");
         let node = parse_number(vec_num.iter().peekable());
         assert_eq!(node.children[0].token.token_type, TokenType::Word("K"),);
+        //assert_eq!(node.children[0].parent, Box::new(Some(node.clone())));
+        // idk what happened here but ok
+        assert_eq!(node.children[0].parent.as_ref().unwrap().deref(), &node);
     }
 
     #[test]
