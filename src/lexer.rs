@@ -3,22 +3,22 @@
 use std::iter::{Enumerate, Peekable};
 use std::str::Chars;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Token<'a> {
-    pub token_type: TokenType<'a>,
+#[derive(Debug, Clone, PartialEq)]
+pub struct Token {
+    pub token_type: TokenType,
     pub from: usize,
     pub to: usize,
     pub line_number: usize,
 }
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum TokenType<'a> {
+#[derive(Debug, Clone, PartialEq)]
+pub enum TokenType {
     Plus,
     Colon,
     CurlyClose,
     CurlyOpen,
     Equal,
     Number(u64),
-    Word(&'a str),
+    Word(String),
     Comma,
     Dot,
     ParClose,
@@ -100,7 +100,7 @@ pub fn lexer(script: &str) -> Vec<Token> {
                 let to = advance_while(it.by_ref(), |c: &char| !c.is_alphabetic())
                     .unwrap_or(script.len());
 
-                push_token(TokenType::Word(&script[index..to]), index, to)
+                push_token(TokenType::Word(script[index..to].to_string()), index, to)
             }
             // to be decided: substraction? division? multiplication ..?
             _ => {
@@ -425,7 +425,7 @@ LINKER.x
         assert_eq!(lexer(LINKER_SCRIPT), expected);
     }
 
-    fn create_token_number(number: u64, from: usize, to: usize, line: usize) -> Token<'static> {
+    fn create_token_number(number: u64, from: usize, to: usize, line: usize) -> Token {
         Token {
             token_type: TokenType::Number(number),
             from,
@@ -435,7 +435,7 @@ LINKER.x
     }
     fn create_token_word(string: &str, from: usize, to: usize, line: usize) -> Token {
         Token {
-            token_type: TokenType::Word(string),
+            token_type: TokenType::Word(string.to_string()),
             from,
             to,
             line_number: line,
