@@ -1,81 +1,127 @@
-use crate::lexer;
-use lexer::{Token, TokenType};
-use std::cell::{Ref, RefCell};
-use std::rc::{Rc, Weak};
+use std::ops::Range;
 
-// MemoryEntry but with span, with a name (RAM, RAM2, FLASH)
-// attribute for ex: "(rx)"
-// struct MemoryEntry {
-//     line: usize,
-//     origin: u64,
-//     length: u64,
-// }
-// Look ahead
+use crate::lexer::{self, lexer};
+use lexer::{Token, TokenKind::*};
+type Span = Range<usize>;
+use anyhow::{anyhow, bail, Context, Error, Result};
 
-// no parent,
-// slice of tokens --> MemoryEntry datastructure
-// tokens do not need to have tree datastructure
-// check previous token or next token
-#[derive(Clone, Debug)]
-struct Node {
-    token: Token,
-    parent: Option<Weak<RefCell<Node>>>,
-    children: Vec<Rc<RefCell<Node>>>,
+const script: &str = "MEMORY
+{
+RAM (rx) : ORIGIN = 0x20000000 + 128K, LENGTH = 65536 + 128K  
+FLASH : ORIGIN = 0x00000000, LENGTH = 262144
+  
+}
+";
+
+struct Expr {
+    span: Span,
+    kind: ExprKind,
 }
 
-impl Node {
-    fn new_leaf(token: Token) -> Self {
-        Node {
-            token,
-            parent: None,
-            children: Vec::new(),
+enum ExprKind {
+    Symbol(String),
+    Number(u64),        // 128
+    Binary(BinaryExpr), // 1 + 1
+    Paren(ParenExpr),   // (1 + 2)
+}
+
+struct BinaryExpr {
+    lhs: Box<Expr>,
+    op: Operator,
+    rhs: Box<Expr>,
+}
+
+struct ParenExpr {
+    inner: Box<Expr>,
+}
+
+enum Operator {
+    Plus,
+    Minus,
+}
+
+pub fn parse(tokens: Vec<Token>) -> Result<()> {
+    let mut stack_commands: Vec<Expr> = Vec::new();
+    let tokens = lexer(script);
+
+    let mut it = tokens.into_iter();
+    while let Some(token) = it.next() {
+        let mut stack: Vec<Token> = Vec::new();
+
+        match token.token_kind {
+            Number(num) => {
+                let num = ExprKind::try_from(lexer::TokenKind::Number(num))?;
+                let operand1 = Expr {
+                    span: token.span,
+                    kind: num,
+                };
+                if let Some(next) = it.next() {
+                    match next.token_kind {
+                        Plus => {
+                            if let Some(num) = it.next() {
+                                let num = ExprKind::try_from(num.token_kind)?;
+                                let operand2 = Expr {
+                                    span: token.span,
+                                    kind: num,
+                                };
+                                stack_commands.push(Expr {
+                                    span: operand1.span.start..operand2.span.end,
+                                    kind: ExprKind::Binary(BinaryExpr {
+                                        lhs: Box::new(operand1),
+                                        op: Operator::try_from(Plus)?,
+                                        rhs: Box::new(operand2),
+                                    }),
+                                });
+                            } // binary expression -> BinaryExpr
+                        }
+                        _ => todo!(),
+                    }
+                }
+            }
+            Plus => {
+                if let Some(exp) = stack_commands.pop() {
+                    match exp.kind {
+                        ExprKind::Binary(_) | ExprKind::Number(_) => {
+                            if let Some(operand) = it.next() {}
+                        }
+
+                        _ => bail!("Binary or number must precede a plus"),
+                    }
+                }
+            }
+
+            Colon => todo!(),
+            CurlyClose => todo!(),
+            CurlyOpen => todo!(),
+            Equal => todo!(),
+            Word(_) => todo!(),
+            Comma => todo!(),
+            Dot => todo!(),
+            ParClose => todo!(),
+            ParOpen => todo!(),
         }
     }
-    fn new_tree(token: Token, children: Vec<Rc<RefCell<Node>>>) -> Self {
-        Node {
-            token,
-            parent: None,
-            children,
+    Ok(())
+}
+
+impl TryFrom<lexer::TokenKind> for ExprKind {
+    type Error = anyhow::Error;
+    fn try_from(token_kind: lexer::TokenKind) -> Result<Self> {
+        match token_kind {
+            lexer::TokenKind::Number(n) => Ok(ExprKind::Number(n)),
+            _ => bail!("That's not a number"),
         }
     }
 }
-type TokenIt<'a> = std::iter::Peekable<std::slice::Iter<'a, Token>>;
 
-fn parse_unit(mut it: TokenIt) -> Option<Rc<RefCell<Node>>> {
-    if let Some(token) = it.peek() {
-        match &token.token_type {
-            TokenType::Word(w) if *w == "K".to_string() => {
-                return Some(Rc::new(RefCell::new(Node::new_leaf(
-                    it.next().unwrap().clone(),
-                ))))
-            }
-            TokenType::Word(w) if *w == "M".to_string() => {
-                return Some(Rc::new(RefCell::new(Node::new_leaf(
-                    it.next().unwrap().clone(),
-                ))))
-            }
-            // Error
-            _ => (),
-        };
+impl TryFrom<lexer::TokenKind> for Operator {
+    type Error = anyhow::Error;
+    fn try_from(token_kind: lexer::TokenKind) -> Result<Self> {
+        match token_kind {
+            lexer::TokenKind::Plus => Ok(Operator::Plus),
+            _ => bail!("That's not an operator"),
+        }
     }
-    None
-}
-fn parse_number(mut it: TokenIt) -> Rc<RefCell<Node>> {
-    let token = it.next().unwrap().clone();
-    if let Some(unit) = parse_unit(it) {
-        let temp = Rc::new(RefCell::new(Node::new_tree(token, vec![unit])));
-        temp.borrow().children[0].borrow_mut().parent = Some(Rc::downgrade(&temp));
-        // temp.children.push(unit);
-        return temp;
-    }
-    Rc::new(RefCell::new(Node::new_leaf(token)))
-}
-
-fn parse_expression() {}
-
-fn parse(tokens: Vec<Token>) {
-    let mut it = tokens.iter().peekable();
-    //parse_number(it);
 }
 
 #[cfg(test)]
