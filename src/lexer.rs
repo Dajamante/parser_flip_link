@@ -3,7 +3,7 @@
 use std::iter::{Enumerate, Peekable};
 use std::ops::Range;
 use std::str::Chars;
-type Span = Range<usize>;
+pub type Span = Range<usize>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
