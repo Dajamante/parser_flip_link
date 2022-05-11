@@ -1,17 +1,18 @@
 //! This lexer is intended to be used with Ferrous Systems flip-link
 
 use std::iter::{Enumerate, Peekable};
+use std::ops::Range;
 use std::str::Chars;
+type Span = Range<usize>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
-    pub token_type: TokenType,
-    pub from: usize,
-    pub to: usize,
+    pub token_kind: TokenKind,
+    pub span: Span,
     pub line_number: usize,
 }
 #[derive(Debug, Clone, PartialEq)]
-pub enum TokenType {
+pub enum TokenKind {
     Plus,
     Colon,
     CurlyClose,
@@ -34,25 +35,24 @@ pub fn lexer(script: &str) -> Vec<Token> {
 
     let mut it = script.chars().enumerate().peekable();
     while let Some((index, ch)) = it.next() {
-        let mut push_token = |token_type, from, to| {
+        let mut push_token = |token_kind, span| {
             tokens.push(Token {
-                token_type,
-                from,
-                to,
+                token_kind,
+                span,
                 line_number,
             })
         };
-        let mut push_char = |token_type| push_token(token_type, index, index + 1);
+        let mut push_char = |token_kind| push_token(token_kind, index..index + 1);
 
         match ch {
-            ':' => push_char(TokenType::Colon),
-            ',' => push_char(TokenType::Comma),
-            '{' => push_char(TokenType::CurlyOpen),
-            '}' => push_char(TokenType::CurlyClose),
-            '=' => push_char(TokenType::Equal),
-            '(' => push_char(TokenType::ParOpen),
-            ')' => push_char(TokenType::ParClose),
-            '.' => push_char(TokenType::Dot),
+            ':' => push_char(TokenKind::Colon),
+            ',' => push_char(TokenKind::Comma),
+            '{' => push_char(TokenKind::CurlyOpen),
+            '}' => push_char(TokenKind::CurlyClose),
+            '=' => push_char(TokenKind::Equal),
+            '(' => push_char(TokenKind::ParOpen),
+            ')' => push_char(TokenKind::ParClose),
+            '.' => push_char(TokenKind::Dot),
             ' ' | '\t' | '\r' => {
                 // nothing to do with whitespaces atm
                 // if we implement start and stop positions
@@ -76,7 +76,7 @@ pub fn lexer(script: &str) -> Vec<Token> {
                     let _ = advance_while(&mut it, |ch| *ch == '\n');
                 }
             }
-            '+' => push_char(TokenType::Plus),
+            '+' => push_char(TokenKind::Plus),
             // Assuming that hex number always start with a 0, and not an "x"!
             '0'..='9' => {
                 let mut from = index;
@@ -94,13 +94,13 @@ pub fn lexer(script: &str) -> Vec<Token> {
                 // Tighten up error management at this stage, or by the parser? What about negative numbers etc.
                 let number = u64::from_str_radix(&script[from..to], radix).unwrap();
 
-                push_token(TokenType::Number(number), index, to);
+                push_token(TokenKind::Number(number), index..to);
             }
             'a'..='z' | 'A'..='Z' => {
                 let to = advance_while(it.by_ref(), |c: &char| !c.is_alphabetic())
                     .unwrap_or(script.len());
 
-                push_token(TokenType::Word(script[index..to].to_string()), index, to)
+                push_token(TokenKind::Word(script[index..to].to_string()), index..to)
             }
             // to be decided: substraction? division? multiplication ..?
             _ => {
@@ -305,9 +305,8 @@ Very unclear comment
             vec![
                 create_token_number(256, 0, 3, 0),
                 Token {
-                    token_type: TokenType::Comma,
-                    from: 3,
-                    to: 4,
+                    token_kind: TokenKind::Comma,
+                    span: (3..4),
                     line_number: 0,
                 },
                 create_token_number(368, 5, 8, 0)
@@ -326,9 +325,8 @@ Very unclear comment
             vec![
                 create_token_number(256, 1, 4, 1),
                 Token {
-                    token_type: TokenType::Comma,
-                    from: 5,
-                    to: 6,
+                    token_kind: TokenKind::Comma,
+                    span: (5..6),
                     line_number: 2,
                 },
                 create_token_number(368, 7, 10, 3)
@@ -358,45 +356,39 @@ PROBLEMS
         let expected = vec![
             create_token_word("MEMORY", 0, 6, 0),
             Token {
-                token_type: TokenType::CurlyOpen,
-                from: 7,
-                to: 8,
+                token_kind: TokenKind::CurlyOpen,
+                span: (7..8),
                 line_number: 1,
             },
             create_token_word("FLASH", 13, 18, 2),
             Token {
-                token_type: TokenType::Colon,
-                from: 19,
-                to: 20,
+                token_kind: TokenKind::Colon,
+                span: (19..20),
                 line_number: 2,
             },
             create_token_word("ORIGIN", 21, 27, 2),
             Token {
-                token_type: TokenType::Equal,
-                from: 28,
-                to: 29,
+                token_kind: TokenKind::Equal,
+                span: (28..29),
                 line_number: 2,
             },
             create_token_number(0, 30, 40, 2),
             Token {
-                token_type: TokenType::Comma,
-                from: 40,
-                to: 41,
+                token_kind: TokenKind::Comma,
+                span: (40..41),
                 line_number: 2,
             },
             create_token_word("LENGTH", 42, 48, 2),
             Token {
-                token_type: TokenType::Equal,
-                from: 49,
-                to: 50,
+                token_kind: TokenKind::Equal,
+                span: (49..50),
                 line_number: 2,
             },
             create_token_number(256, 51, 54, 2),
             create_token_word("K", 54, 55, 2),
             Token {
-                token_type: TokenType::CurlyClose,
-                from: 56,
-                to: 57,
+                token_kind: TokenKind::CurlyClose,
+                span: (56..57),
                 line_number: 3,
             },
         ];
@@ -414,9 +406,8 @@ LINKER.x
             create_token_word("MEMORY", 0, 6, 0),
             create_token_word("LINKER", 7, 13, 1),
             Token {
-                token_type: TokenType::Dot,
-                from: 13,
-                to: 14,
+                token_kind: TokenKind::Dot,
+                span: (13..14),
                 line_number: 1,
             },
             create_token_word("x", 14, 15, 1),
@@ -427,17 +418,15 @@ LINKER.x
 
     fn create_token_number(number: u64, from: usize, to: usize, line: usize) -> Token {
         Token {
-            token_type: TokenType::Number(number),
-            from,
-            to,
+            token_kind: TokenKind::Number(number),
+            span: from..to,
             line_number: line,
         }
     }
     fn create_token_word(string: &str, from: usize, to: usize, line: usize) -> Token {
         Token {
-            token_type: TokenType::Word(string.to_string()),
-            from,
-            to,
+            token_kind: TokenKind::Word(string.to_string()),
+            span: from..to,
             line_number: line,
         }
     }
