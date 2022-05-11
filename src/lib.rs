@@ -2,7 +2,7 @@ mod lexer;
 mod parser;
 use anyhow::{bail, Error, Result};
 
-use lexer::{Token, TokenType};
+use lexer::{Token, TokenKind};
 use std::{iter::Peekable, ops::RangeInclusive};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,7 +28,7 @@ impl MemoryEntry {
 //     42
 // }
 
-// fn advance(tt: TokenType, tokens: &[lexer::Token]) -> usize {
+// fn advance(tt: TokenKind, tokens: &[lexer::Token]) -> usize {
 //     42
 // }
 
