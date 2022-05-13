@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, ops::Range};
+use std::{collections::VecDeque, iter::Peekable, ops::Range};
 
 use crate::lexer::{self, lexer, Span, TokenKind};
 use anyhow::{anyhow, bail, Context, Error, Result};
@@ -65,9 +65,52 @@ fn parse_sub(start: usize, tokens: &Vec<Token>, postfix: &mut Vec<Token>) -> usi
     return index;
 }
 
+fn is_unit(token: &Token) -> bool {
+    match &token.token_kind {
+        TokenKind::Word(w) if *w == "K".to_string() => true,
+        TokenKind::Word(w) if *w == "M".to_string() => true,
+        _ => false,
+    };
+    false
+}
+
+/// This inserts dummy units after numbers and dummy attributes after RAM
+/// Those work as default tokens and * 1 for number, or an empty parenthesis after
+/// RAM instead of RAM (rx).
+fn insert_default_tokens(tokens: &Vec<Token>) -> Vec<Token> {
+    let mut new_tokens: Vec<Token> = Vec::new();
+    let mut it = tokens.into_iter().peekable();
+    while let Some(t) = it.next() {
+        new_tokens.push(t.clone());
+        match t.token_kind {
+            TokenKind::Number(n) => {
+                if let Some(next_tok) = it.peek() {
+                    if is_unit(next_tok) {
+                        continue;
+                    } else {
+                        new_tokens.push(Token {
+                            token_kind: TokenKind::Word("U".to_string()),
+                            span: t.span.clone(),
+                            line_number: t.line_number,
+                        });
+                    }
+                } else {
+                    new_tokens.push(Token {
+                        token_kind: TokenKind::Word("U".to_string()),
+                        span: t.span.clone(),
+                        line_number: t.line_number,
+                    });
+                }
+            }
+            _ => continue,
+        }
+    }
+    return new_tokens;
+}
 /// This method puts the tokens in the right order to build a tree and returns a Vec<Token>
 pub fn parse(script: &str) -> Vec<Token> {
     let tokens = lexer(script);
+    let tokens = insert_default_tokens(&tokens);
     let mut postfix: Vec<Token> = Vec::new();
 
     parse_sub(0, &tokens, &mut postfix);
@@ -97,6 +140,11 @@ mod tests {
     use crate::lexer::lexer;
 
     use super::*;
+
+    #[test]
+    fn parser_postfix_0() {
+        assert!(is_equal(parse("1"), vec![Number(1)]));
+    }
 
     #[test]
     fn parser_postfix_1() {
