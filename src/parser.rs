@@ -25,7 +25,16 @@ fn get_stack_requirement(token: &Token) -> usize {
         Plus => 2,
         Equal => 2,
         Word(w) if *w == "RAM".to_string() => 2,
+        // Number is followed by a unit or default token
+        Number(_) => 1,
         _ => 0,
+    }
+}
+
+fn get_precedence(token: &Token) -> usize {
+    match token.token_kind {
+        Plus => 0,
+        _ => 100,
     }
 }
 
@@ -36,7 +45,7 @@ fn is_relevant(t: &Token) -> bool {
 
 /// This method recursively creates a postfix vector of Tokens
 fn parse_sub(start: usize, tokens: &Vec<Token>, postfix: &mut Vec<Token>) -> usize {
-    println!("{:#?}", tokens);
+    //println!("Det som kommer {:#?}", tokens);
     let mut index = start;
     let mut stack: Vec<Token> = Vec::new();
     while index < tokens.len() {
@@ -45,8 +54,10 @@ fn parse_sub(start: usize, tokens: &Vec<Token>, postfix: &mut Vec<Token>) -> usi
             if get_stack_requirement(t) == 0 {
                 postfix.push(t.clone());
             } else {
-                while !stack.is_empty() {
-                    postfix.push(stack.pop().unwrap());
+                if !stack.is_empty() && get_precedence(t) <= get_precedence(stack.last().unwrap()) {
+                    while !stack.is_empty() {
+                        postfix.push(stack.pop().unwrap());
+                    }
                 }
                 stack.push(t.clone());
             }
@@ -79,27 +90,14 @@ fn is_unit(token: &Token) -> bool {
 /// RAM instead of RAM (rx).
 fn insert_default_tokens(tokens: &Vec<Token>) -> Vec<Token> {
     let mut new_tokens: Vec<Token> = Vec::new();
-    let mut it = tokens.into_iter().peekable();
+    let mut it = tokens.iter().peekable();
     while let Some(t) = it.next() {
         new_tokens.push(t.clone());
         match t.token_kind {
-            TokenKind::Number(n) => {
-                if let Some(next_tok) = it.peek() {
-                    if is_unit(next_tok) {
-                        continue;
-                    } else {
-                        new_tokens.push(Token {
-                            token_kind: TokenKind::Word("U".to_string()),
-                            span: t.span.clone(),
-                            line_number: t.line_number,
-                        });
-                    }
-                } else {
-                    new_tokens.push(Token {
-                        token_kind: TokenKind::Word("U".to_string()),
-                        span: t.span.clone(),
-                        line_number: t.line_number,
-                    });
+            TokenKind::Number(_) => {
+                // If there is no unit, or if there is nothing in the vec after the number
+                if it.peek().is_none() || !is_unit(it.peek().unwrap()) {
+                    new_tokens.push(Token::default());
                 }
             }
             _ => continue,
@@ -111,10 +109,11 @@ fn insert_default_tokens(tokens: &Vec<Token>) -> Vec<Token> {
 pub fn parse(script: &str) -> Vec<Token> {
     let tokens = lexer(script);
     let tokens = insert_default_tokens(&tokens);
+    //println!("Med defaults {:#?}", tokens);
     let mut postfix: Vec<Token> = Vec::new();
 
     parse_sub(0, &tokens, &mut postfix);
-
+    //println!("POSTFIX {:#?}", postfix);
     postfix
 }
 
@@ -131,31 +130,48 @@ fn build_tree(postfix: Vec<Token>) -> Vec<Node> {
         }
         stack.push(n);
     }
-    println!("{:#?}", &stack);
-    Vec::from_iter(stack)
+    //println!("STACK {:#?}", &stack);
+    stack
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer::lexer;
-
     use super::*;
 
     #[test]
     fn parser_postfix_0() {
-        assert!(is_equal(parse("1"), vec![Number(1)]));
+        assert!(is_equal(parse("1"), vec![DefaultToken, Number(1)]));
     }
 
     #[test]
     fn parser_postfix_1() {
-        assert!(is_equal(parse("1 + 2"), vec![Number(1), Number(2), Plus]));
+        assert!(is_equal(
+            parse("1 + 2"),
+            vec![DefaultToken, Number(1), DefaultToken, Number(2), Plus]
+        ));
     }
 
+    /// 1 D + 2 D + 3 D
+    ///
+    /// The platt ---- D 1 D 2 + D 3 +
+    /// The stack | empty |
+    ///
+    ///
+    ///
     #[test]
     fn parser_postfix_2() {
         assert!(is_equal(
             parse("1 + 2 + 3"),
-            vec![Number(1), Number(2), Plus, Number(3), Plus]
+            vec![
+                DefaultToken,
+                Number(1),
+                DefaultToken,
+                Number(2),
+                Plus,
+                DefaultToken,
+                Number(3),
+                Plus,
+            ]
         ));
     }
 
@@ -163,20 +179,46 @@ mod tests {
     fn parser_postfix_3() {
         assert!(!is_equal(
             parse("1 + 2 + 3"),
-            vec![Number(1), Number(5), Plus, Number(3), Plus]
+            vec![
+                DefaultToken,
+                Number(1),
+                DefaultToken,
+                Number(5),
+                Plus,
+                DefaultToken,
+                Number(3),
+                Plus
+            ]
         ));
     }
 
     #[test]
     fn parser_postfix_4_par() {
-        assert!(is_equal(parse("(1)"), vec![Number(1)]));
+        assert!(is_equal(parse("(1)"), vec![DefaultToken, Number(1)]));
     }
 
     #[test]
     fn parser_postfix_5() {
         assert!(is_equal(
             parse("1 + (2 + 3)"),
-            vec![Number(1), Number(2), Number(3), Plus, Plus]
+            vec![
+                DefaultToken,
+                Number(1),
+                DefaultToken,
+                Number(2),
+                DefaultToken,
+                Number(3),
+                Plus,
+                Plus
+            ]
+        ));
+    }
+
+    #[test]
+    fn parser_postfix_6() {
+        assert!(is_equal(
+            parse("1 2"),
+            vec![DefaultToken, Number(1), DefaultToken, Number(2)]
         ));
     }
     /*
@@ -186,13 +228,22 @@ mod tests {
             +
            / \
           1   2
+        /      \
+       D        D
     */
     #[test]
     fn build_tree_1() {
         let postfix = parse("1 + 2");
         let tree = build_tree(postfix);
+        // Plus is the root
         assert!(tree[0].token.token_kind == TokenKind::Plus);
+        // Number(1) is a node
         assert!(tree[0].children[0].token.token_kind == TokenKind::Number(1));
+        // DefaultToken (aka Unit == 1) is the child of Number(1)
+        assert!(tree[0].children[0].children[0].token.token_kind == TokenKind::DefaultToken);
+        // There is only one "default unit" who is child of Number(1)
+        assert!(tree[0].children[0].children.len() == 1);
+        // The next child is Number(2)
         assert!(tree[0].children[1].token.token_kind == TokenKind::Number(2));
     }
 
@@ -205,6 +256,8 @@ mod tests {
           1   +
              / \
             3   4
+           /     \
+          D       D
     */
     #[test]
     fn build_tree_2() {
@@ -218,6 +271,9 @@ mod tests {
     }
 
     // Two roots
+    // 1 D 2 D
+    // The flat ---- D D 2 1
+    // The stack --- D (1-(2-D))
     #[test]
     fn build_tree_3() {
         let postfix = parse("1 2");
@@ -233,6 +289,8 @@ fn is_equal(v1: Vec<Token>, v2: Vec<TokenKind>) -> bool {
     }
     for i in 0..v1.len() {
         if v1[i].token_kind != v2[i] {
+            //println!("V1 token i {i} {:#?}", v1[i].token_kind);
+            //println!("V2 token i {i} {:#?}", v2[i]);
             return false;
         }
     }

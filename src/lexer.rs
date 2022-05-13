@@ -24,8 +24,18 @@ pub enum TokenKind {
     Dot,
     ParClose,
     ParOpen,
+    DefaultToken,
 }
 
+impl Token {
+    pub fn default() -> Self {
+        Token {
+            token_kind: TokenKind::DefaultToken,
+            span: 0..0,
+            line_number: 0,
+        }
+    }
+}
 pub fn lexer(script: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
 
