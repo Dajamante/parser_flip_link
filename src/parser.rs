@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{collections::VecDeque, ops::Range};
 
 use crate::lexer::{self, lexer, Span, TokenKind};
 use anyhow::{anyhow, bail, Context, Error, Result};
@@ -12,6 +12,7 @@ use lexer::{Token, TokenKind::*};
 // }
 // ";
 
+#[derive(Debug)]
 struct Node {
     token: Token,
     children: Vec<Box<Node>>,
@@ -33,7 +34,7 @@ fn is_relevant(t: &Token) -> bool {
     (t.token_kind != TokenKind::ParClose) && (t.token_kind != TokenKind::ParOpen)
 }
 
-/// This method sets the tokens in the right order to build a tree.
+/// This method recursively creates a postfix vector of Tokens
 fn parse_sub(start: usize, tokens: &Vec<Token>, postfix: &mut Vec<Token>) -> usize {
     println!("{:#?}", tokens);
     let mut index = start;
@@ -64,14 +65,31 @@ fn parse_sub(start: usize, tokens: &Vec<Token>, postfix: &mut Vec<Token>) -> usi
     return index;
 }
 
+/// This method puts the tokens in the right order to build a tree and returns a Vec<Token>
 pub fn parse(script: &str) -> Vec<Token> {
     let tokens = lexer(script);
     let mut postfix: Vec<Token> = Vec::new();
-    println!("POSTFIX   !!{:#?}", postfix);
 
     parse_sub(0, &tokens, &mut postfix);
 
     postfix
+}
+
+fn build_tree(postfix: Vec<Token>) -> Vec<Node> {
+    let mut stack: Vec<Node> = Vec::new();
+    for t in postfix {
+        let mut n = Node {
+            token: t.clone(),
+            children: Vec::new(),
+        };
+        for _ in 0..get_stack_requirement(&t) {
+            let temp = stack.pop().unwrap();
+            n.children.insert(0, Box::new(temp));
+        }
+        stack.push(n);
+    }
+    println!("{:#?}", &stack);
+    Vec::from_iter(stack)
 }
 
 #[cfg(test)]
@@ -112,6 +130,52 @@ mod tests {
             parse("1 + (2 + 3)"),
             vec![Number(1), Number(2), Number(3), Plus, Plus]
         ));
+    }
+    /*
+    "1 + 2)"
+    Becomes in postfix -> 1 2 +
+    Becomes a tree:
+            +
+           / \
+          1   2
+    */
+    #[test]
+    fn build_tree_1() {
+        let postfix = parse("1 + 2");
+        let tree = build_tree(postfix);
+        assert!(tree[0].token.token_kind == TokenKind::Plus);
+        assert!(tree[0].children[0].token.token_kind == TokenKind::Number(1));
+        assert!(tree[0].children[1].token.token_kind == TokenKind::Number(2));
+    }
+
+    /*
+    "1 + (3 + 4)"
+    Becomes in postfix -> 1 3 4 + +
+    Becomes a tree:
+            +
+           / \
+          1   +
+             / \
+            3   4
+    */
+    #[test]
+    fn build_tree_2() {
+        let postfix = parse("1 + (3 + 4)");
+        let tree = build_tree(postfix);
+        assert!(tree[0].token.token_kind == TokenKind::Plus);
+        assert!(tree[0].children[0].token.token_kind == TokenKind::Number(1));
+        assert!(tree[0].children[1].token.token_kind == TokenKind::Plus);
+        assert!(tree[0].children[1].children[0].token.token_kind == TokenKind::Number(3));
+        assert!(tree[0].children[1].children[1].token.token_kind == TokenKind::Number(4));
+    }
+
+    // Two roots
+    #[test]
+    fn build_tree_3() {
+        let postfix = parse("1 2");
+        let tree = build_tree(postfix);
+        assert!(tree[0].token.token_kind == TokenKind::Number(1));
+        assert!(tree[1].token.token_kind == TokenKind::Number(2));
     }
 }
 
