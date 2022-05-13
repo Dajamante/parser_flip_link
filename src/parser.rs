@@ -16,49 +16,9 @@ struct Node {
     token: Token,
     children: Vec<Box<Node>>,
 }
-
-// int parse(int start, InfixParseResult& result, const OpMap& availableOps) {
-// 	//Program stack;
-// 	//const auto& tokens = result.tokens;
-// 	//size_t i = start;
-// 	for (; i < tokens.size(); i++) {
-// 		const auto& token = tokens[i];
-// 		if (token.isOp()) {
-// 			const Op* op = getOp(availableOps, token.token);
-// 			if (op != nullptr) {
-// 				if (op->getStackRequire() == 0) {
-// 					result.program.push(op);
-// 				}
-// 				else {
-// 					if (!stack.isEmpty() && getPrecedence(stack.top()) > getPrecedence(op)) {
-// 						while (!stack.isEmpty()) {
-// 							result.program.push(stack.top());
-// 							stack.pop();
-// 						}
-// 					}
-// 					stack.push(op);
-// 				}
-// 			}
-// 			else {
-// 				result.errors.push_back("Unknown identifier '" + token.token + "'.");
-// 			}
-// 		}
-
-// 		if (token.token == "(" || token.token == "[") {
-// 			i = parse(i + 1, result, availableOps);
-// 		}
-// 		else if (token.token == ")" || token.token == "]") {
-// 			break;
-// 		}
-// 	}
-
-// 	while (!stack.isEmpty()) {
-// 		result.program.push(stack.top());
-// 		stack.pop();
-// 	}
-// 	return i;
-// }
-
+/// Tokens have different requirements, for example:
+/// - "+" has requirement 2 numbers
+/// - A number has zero requirements
 fn get_stack_requirement(token: &Token) -> usize {
     match &token.token_kind {
         Plus => 2,
@@ -68,17 +28,18 @@ fn get_stack_requirement(token: &Token) -> usize {
     }
 }
 
+/// This method skips parenthesis and everything not relevant for the tree
 fn is_relevant(t: &Token) -> bool {
     (t.token_kind != TokenKind::ParClose) && (t.token_kind != TokenKind::ParOpen)
 }
 
+/// This method sets the tokens in the right order to build a tree.
 fn parse_sub(start: usize, tokens: &Vec<Token>, postfix: &mut Vec<Token>) -> usize {
     println!("{:#?}", tokens);
     let mut index = start;
     let mut stack: Vec<Token> = Vec::new();
     while index < tokens.len() {
         let t = &tokens[index];
-        // om jag skippar parentes här
         if is_relevant(t) {
             if get_stack_requirement(t) == 0 {
                 postfix.push(t.clone());
