@@ -33,7 +33,9 @@ fn get_stack_requirement(token: &Token) -> usize {
 
 fn get_precedence(token: &Token) -> usize {
     match token.token_kind {
-        Plus => 0,
+        Plus => 1,
+        Equal => 0,
+
         _ => 100,
     }
 }
@@ -93,13 +95,28 @@ fn insert_default_tokens(tokens: &Vec<Token>) -> Vec<Token> {
     let mut it = tokens.iter().peekable();
     while let Some(t) = it.next() {
         new_tokens.push(t.clone());
-        match t.token_kind {
+        match &t.token_kind {
             TokenKind::Number(_) => {
                 // If there is no unit, or if there is nothing in the vec after the number
                 if it.peek().is_none() || !is_unit(it.peek().unwrap()) {
                     new_tokens.push(Token::default());
                 }
             }
+            Word(w) if *w == "RAM".to_string() => {
+                if it.peek().is_none() || it.peek().unwrap().token_kind != TokenKind::ParOpen {
+                    new_tokens.push(Token::default());
+                }
+            }
+            Plus => continue,
+            Colon => continue,
+            CurlyClose => continue,
+            CurlyOpen => continue,
+            Equal => continue,
+            Comma => continue,
+            Dot => continue,
+            ParClose => continue,
+            ParOpen => continue,
+            DefaultToken => continue,
             _ => continue,
         }
     }
@@ -281,6 +298,41 @@ mod tests {
         assert!(tree[0].token.token_kind == TokenKind::Number(1));
         assert!(tree[1].token.token_kind == TokenKind::Number(2));
     }
+
+    #[test]
+    fn memory_x_1() {
+        const linker_script: &str = "MEMORY
+(
+RAM (rx) : ORIGIN = 0x20000000 + 128K, LENGTH = 65536 + 128K  
+FLASH : ORIGIN = 0x00000000, LENGTH = 262144
+  
+)
+";
+        let felefalo = parse(linker_script);
+        let felegrow = build_tree(felefalo);
+        //println!("Felefalo: {:#?}", felefalo);
+        println!("Felegrow: {:#?}", felegrow);
+    }
+    /*
+    "ORIGIN = 0x2000000"
+    Becomes in postfix -> ORIGIN Default 0x2000_0000 =
+    Becomes a tree:
+            =
+           / \
+          O.  0x2
+             /
+            D
+    */
+    #[test]
+    fn equal_precedence() {
+        let tokens = parse("ORIGIN = 0x20000000");
+        let nodes = build_tree(tokens);
+
+        assert!(nodes[0].token.token_kind == TokenKind::Equal);
+        assert!(nodes[0].children[0].token.token_kind == TokenKind::Word("ORIGIN".to_string()));
+        assert!(nodes[0].children[1].token.token_kind == TokenKind::Number(0x20000000));
+        assert!(nodes[0].children[1].children[0].token.token_kind == TokenKind::DefaultToken);
+    }
 }
 
 fn is_equal(v1: Vec<Token>, v2: Vec<TokenKind>) -> bool {
@@ -294,5 +346,5 @@ fn is_equal(v1: Vec<Token>, v2: Vec<TokenKind>) -> bool {
             return false;
         }
     }
-    return true;
+    true
 }
